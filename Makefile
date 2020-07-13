@@ -16,7 +16,7 @@ INC_DIR       = src
 INC_FILE      = msiklm.h
 
 SRC_DIR       = src
-SRC_FILE      = main.c \
+SRC_FILE      = main-client.c \
                 msiklm.c
 
 OBJ_DIR       = .obj
