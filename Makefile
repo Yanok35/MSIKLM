@@ -6,7 +6,7 @@
 TARGET_C      = msiklm
 TARGET_D      = msiklmd
 CC            = gcc
-CFLAGS        = -m64 -pipe -O3 -Wall -W -D_REENTRANT
+CFLAGS        = -std=c99 -m64 -march=native -pipe -O2 -ftree-vectorize -Wall -Wno-unused-result -W -D_REENTRANT #-DNDEBUG
 LFLAGS        = -m64 -Wl,-O3
 LIBS          = -lhidapi-libusb -lm
 DEL_FILE      = rm -f
@@ -45,6 +45,7 @@ $(TARGET_C): $(OBJ_C)
 
 $(TARGET_D): $(OBJ_D)
 	$(CC) $(LFLAGS) -o $@ $(OBJ_D) $(LIBS)
+	strip --strip-all $@
 
 clean:
 	$(DEL_FILE) $(OBJ_C) $(OBJ_D)
