@@ -1,0 +1,12 @@
+[Unit]
+Description=Small daemon to change MSI SteelSeries keyboard color
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/msiklmd
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+
