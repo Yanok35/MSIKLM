@@ -5,18 +5,34 @@
  */
 
 #include <assert.h>
+#include <libgen.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <syslog.h>
 #include <unistd.h>
 #include "msiklm.h"
+
+static bool daemon_running = true;
 
 /**
  * @brief prints help information
  */
 void show_help()
 {
+}
+
+/**
+ * @brief SIGTERM signal handler
+ */
+static void sigterm_handler(int n)
+{
+    (void) n;
+    daemon_running = false;
 }
 
 //['us', 'ni', 'sy', 'id', 'wa', 'hi', 'si', 'st']
@@ -192,6 +208,7 @@ static HsvColor RgbToHsv(RgbColor rgb)
 int main(int argc, char** argv)
 {
     int ret = EXIT_SUCCESS;
+    int loglevel = LOG_USER;
     struct color colors[7];
     int num_regions = 3;
     struct stat_entry stat_prev, stat_curr;
@@ -199,31 +216,80 @@ int main(int argc, char** argv)
     (void) argc;
     (void) argv;
 
-    hid_device* dev = open_keyboard();
-    if (!dev)
+    if (!keyboard_found())
     {
         fprintf(stderr, "Fail opening MSI LED keyboard.\n");
         exit(EXIT_FAILURE);
     }
 
-    enum brightness br = high;
-    enum mode md = normal;
-    set_mode(dev, md);
+    /* Our process ID and Session ID */
+    pid_t pid, sid;
 
+    /* Fork off the parent process */
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork() failed.\n");
+        exit(EXIT_FAILURE);
+    }
+    /* If we got a good PID, then
+       we can exit the parent process. */
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    /* Change the file mode mask */
+    umask(0);
+
+    /* Open any logs here */
+    syslog(loglevel | LOG_INFO, "%s daemon started.", basename(argv[0]));
+
+    /* Create a new SID for the child process */
+    sid = setsid();
+    if (sid < 0) {
+        /* Log the failure */
+        fprintf(stderr, "setsid() failed.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Change the current working directory */
+    if ((chdir("/")) < 0) {
+        /* Log the failure */
+        exit(EXIT_FAILURE);
+    }
+
+    /* Close out the standard file descriptors */
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
+    /* Register SIGTERM handler */
+    signal(SIGTERM, sigterm_handler);
+
+    /* Catch initial CPU usage */
     read_proc_stat(&stat_prev);
     sleep(1);
 
+    hid_device* dev = open_keyboard();
+    if (!dev) {
+        syslog(loglevel | LOG_ERR, " open_keyboard() failed\n");
+        ret = 1;
+    }
+
+    enum brightness br = rgb;
+    enum mode md = normal;
+    set_mode(dev, md);
+
     unsigned long use;
     unsigned long tot;
-    bool deamon = true;
-    while (deamon && !ret) {
+    while (daemon_running && !ret) {
         read_proc_stat(&stat_curr);
 
         stat_entry_calc_delta(&stat_curr, &stat_prev, &use, &tot);
 
         float ratio = ((float)use) / ((float)tot); /** [0..1] interval */
-        //float cpu_percent = ratio * 100.0f;
-        //printf(" cpu: %3.2f %%\n", cpu_percent);
+        // float cpu_percent = ratio * 100.0f;
+        // //printf(" cpu: %3.2f %%\n", cpu_percent);
+        // syslog(loglevel | LOG_DEBUG, " cpu: %3.2f %%\n", cpu_percent);
 
         HsvColor load_in_hsv = {
             .h = 20, /** Color hue */
@@ -245,6 +311,7 @@ int main(int argc, char** argv)
         sleep(1);
     }
 
+    syslog(loglevel | LOG_INFO, "%s daemon exiting.", basename(argv[0]));
     hid_close(dev);
 
     return ret;
